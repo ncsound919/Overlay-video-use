@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { Upload, FileVideo, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -15,6 +15,21 @@ export function FileUpload({ onUpload, accept = "video/*", maxSize = 4096 }: Fil
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const input = fileRef.current
+    if (!input) return
+    const handleChange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      setUploading(true)
+      try { await onUpload(file) } catch (err) {
+        setError(err instanceof Error ? err.message : "Upload failed")
+      } finally { setUploading(false) }
+    }
+    input.addEventListener("change", handleChange)
+    return () => input.removeEventListener("change", handleChange)
+  }, [onUpload])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
@@ -42,16 +57,7 @@ export function FileUpload({ onUpload, accept = "video/*", maxSize = 4096 }: Fil
       onDrop={handleDrop}
       onClick={() => fileRef.current?.click()}
     >
-      <input ref={fileRef} type="file" accept={accept} className="sr-only"
-        onChange={async (e) => {
-          const file = e.target.files?.[0]
-          if (!file) return
-          setUploading(true)
-          try { await onUpload(file) } catch (err) {
-            setError(err instanceof Error ? err.message : "Upload failed")
-          } finally { setUploading(false) }
-        }}
-      />
+      <input ref={fileRef} type="file" accept={accept} className="sr-only" />
       {uploading ? (
         <div className="space-y-2">
           <FileVideo className="w-12 h-12 mx-auto text-accent animate-pulse" />
