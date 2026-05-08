@@ -2,31 +2,53 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
+import Link from "next/link"
 import { api } from "@/lib/api-client"
-import type { Source, EDLRange, Scene, Render } from "@/lib/types"
+import type { Source, Scene, Render } from "@/lib/types"
 import { useProject } from "@/hooks/use-project"
 import { useTranscript } from "@/hooks/use-transcript"
 import { LoadingSpinner } from "@/components/shared/loading-spinner"
 import { EmptyState } from "@/components/shared/empty-state"
 import { formatDuration } from "@/lib/utils"
+import { toast } from "sonner"
 import { Film, FileVideo, Mic, Scissors, BrainCircuit, Music, Crop, Download, Clock, Hash, Maximize2 } from "lucide-react"
 
 export default function ProjectEditorPage() {
   const params = useParams()
   const projectId = Number(params.id)
   const { project, loading, error } = useProject(projectId)
-  const { transcript, loadTranscript, startTranscription } = useTranscript(projectId)
+  const { transcript, startTranscription } = useTranscript(projectId)
 
   const [activeTab, setActiveTab] = useState("sources")
   const [sources, setSources] = useState<Source[]>([])
+  const [sourcesLoading, setSourcesLoading] = useState(true)
   const [scenes, setScenes] = useState<Scene[]>([])
   const [renders, setRenders] = useState<Render[]>([])
   const [processing, setProcessing] = useState<string | null>(null)
 
   useEffect(() => {
     if (!projectId) return
+    setSourcesLoading(true)
+    fetch(`/api/uploads/${projectId}`)
+      .then(r => r.json())
+      .then(data => setSources(Array.isArray(data) ? data : []))
+      .catch(() => toast.error("Failed to load sources"))
+      .finally(() => setSourcesLoading(false))
     api.listRenders(projectId).then(setRenders).catch(() => {})
   }, [projectId])
+
+  const handleAction = async (label: string, fn: () => Promise<void>) => {
+    setProcessing(label)
+    try { await fn() }
+    catch (e: unknown) { toast.error(e instanceof Error ? e.message : `${label} failed`) }
+    finally { setProcessing(null) }
+  }
+
+  const resolveRenderUrl = (outputPath: string | null): string => {
+    if (!outputPath) return "#"
+    const parts = outputPath.replace(/\\/g, "/").split("renders/")
+    return `/renders/${parts[parts.length - 1]}`
+  }
 
   if (loading) return <LoadingSpinner size={32} label="Loading project..." className="justify-center py-16" />
   if (error) return <div className="text-destructive py-16 text-center">{error}</div>
@@ -46,13 +68,13 @@ export default function ProjectEditorPage() {
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-            <a href="/projects" className="hover:text-foreground">Projects</a>
+            <Link href="/projects" className="hover:text-foreground">Projects</Link>
             <span>/</span>
             <span className="text-foreground">{project.name}</span>
           </div>
           <h1 className="text-2xl font-bold">{project.name}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {project.aspect_ratio} · {project.fps}fps · {project.source_count} source{project.source_count !== 1 ? "s" : ""}
+            {project.aspect_ratio} · {project.fps}fps · {sources.length} source{sources.length !== 1 ? "s" : ""}
           </p>
         </div>
         <span className={`text-xs px-2 py-1 rounded-full ${
@@ -61,7 +83,6 @@ export default function ProjectEditorPage() {
         }`}>{project.status}</span>
       </div>
 
-      {/* Tab bar */}
       <div className="flex gap-1 bg-secondary p-1 rounded-lg w-fit">
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
@@ -73,10 +94,11 @@ export default function ProjectEditorPage() {
         ))}
       </div>
 
-      {/* Sources tab */}
       {activeTab === "sources" && (
         <div className="grid gap-4 md:grid-cols-2">
-          {sources.length === 0 ? (
+          {sourcesLoading ? (
+            <p className="col-span-full text-center text-muted-foreground py-8">Loading sources...</p>
+          ) : sources.length === 0 ? (
             <p className="col-span-full text-center text-muted-foreground py-8">No sources. Upload from the Upload page.</p>
           ) : sources.map((s) => (
             <div key={s.id} className="bg-card border border-border rounded-lg p-4">
@@ -94,20 +116,15 @@ export default function ProjectEditorPage() {
               </div>
               <div className="flex gap-2 mt-3">
                 {!s.has_transcript && (
-                  <button onClick={async () => {
-                    setProcessing("Transcribing...")
-                    await startTranscription(s.id)
-                    setProcessing(null)
-                  }} className="flex items-center gap-1 text-xs bg-accent/10 text-accent px-2 py-1 rounded hover:bg-accent/20">
+                  <button onClick={() => handleAction("Transcribing...", () => startTranscription(s.id))}
+                    className="flex items-center gap-1 text-xs bg-accent/10 text-accent px-2 py-1 rounded hover:bg-accent/20">
                     <Mic className="w-3 h-3" /> Transcribe
                   </button>
                 )}
-                <button onClick={async () => {
-                  setProcessing("Detecting scenes...")
+                <button onClick={() => handleAction("Detecting scenes...", async () => {
                   const result = await api.detectScenes(projectId, s.id)
                   setScenes(result.scenes)
-                  setProcessing(null)
-                }} className="flex items-center gap-1 text-xs bg-secondary text-muted-foreground px-2 py-1 rounded hover:text-foreground">
+                })} className="flex items-center gap-1 text-xs bg-secondary text-muted-foreground px-2 py-1 rounded hover:text-foreground">
                   <BrainCircuit className="w-3 h-3" /> Detect Scenes
                 </button>
               </div>
@@ -116,7 +133,6 @@ export default function ProjectEditorPage() {
         </div>
       )}
 
-      {/* Transcript tab */}
       {activeTab === "transcript" && (
         !transcript ? (
           <div className="text-center py-16">
@@ -132,7 +148,6 @@ export default function ProjectEditorPage() {
         )
       )}
 
-      {/* Scenes tab */}
       {activeTab === "scenes" && (
         scenes.length === 0 ? (
           <div className="text-center py-16">
@@ -152,7 +167,6 @@ export default function ProjectEditorPage() {
         )
       )}
 
-      {/* Reframe tab */}
       {activeTab === "reframe" && (
         <div className="space-y-4 max-w-md">
           <p className="text-sm text-muted-foreground">Convert your video to different aspect ratios for social platforms.</p>
@@ -163,11 +177,9 @@ export default function ProjectEditorPage() {
               { aspect: "4:5", label: "IG Portrait", emoji: "📱" },
               { aspect: "16:9", label: "YouTube", emoji: "🖥️" },
             ].map((preset) => (
-              <button key={preset.aspect} onClick={async () => {
+              <button key={preset.aspect} onClick={() => {
                 if (!sources[0]) return
-                setProcessing(`Reframing to ${preset.aspect}...`)
-                await api.reframe(projectId, sources[0].id, preset.aspect)
-                setProcessing(null)
+                handleAction(`Reframing to ${preset.aspect}...`, () => api.reframe(projectId, sources[0].id, preset.aspect))
               }} className="bg-card border border-border rounded-lg p-4 text-center hover:border-accent transition-colors">
                 <div className="text-2xl mb-1">{preset.emoji}</div>
                 <div className="text-sm font-medium">{preset.aspect}</div>
@@ -178,7 +190,6 @@ export default function ProjectEditorPage() {
         </div>
       )}
 
-      {/* Audio tab */}
       {activeTab === "audio" && (
         <div className="space-y-4 max-w-md">
           <p className="text-sm text-muted-foreground">Clean up audio with open-source FFmpeg filters.</p>
@@ -186,11 +197,9 @@ export default function ProjectEditorPage() {
             { mode: "full", label: "Full Cleanup", desc: "Noise reduction → silence removal → loudness normalization" },
             { mode: "silence", label: "Remove Silence", desc: "Cut out dead air and long pauses" },
           ].map((item) => (
-            <button key={item.mode} onClick={async () => {
+            <button key={item.mode} onClick={() => {
               if (!sources[0]) return
-              setProcessing(`${item.label}...`)
-              await api.cleanupAudio(projectId, sources[0].id, item.mode)
-              setProcessing(null)
+              handleAction(`${item.label}...`, () => api.cleanupAudio(projectId, sources[0].id, item.mode))
             }} className="w-full bg-card border border-border rounded-lg p-4 text-left hover:border-accent transition-colors">
               <div className="font-medium">{item.label}</div>
               <p className="text-xs text-muted-foreground mt-1">{item.desc}</p>
@@ -199,7 +208,6 @@ export default function ProjectEditorPage() {
         </div>
       )}
 
-      {/* Render tab */}
       {activeTab === "render" && (
         <div className="space-y-6">
           <div>
@@ -211,14 +219,10 @@ export default function ProjectEditorPage() {
                 { preset: "instagram_square", label: "IG Square", dims: "1080×1080" },
                 { preset: "twitter", label: "X / Twitter", dims: "1280×720" },
               ].map((p) => (
-                <button key={p.preset} onClick={async () => {
-                  setProcessing(`Rendering for ${p.label}...`)
-                  try {
-                    const result = await api.render(projectId, p.preset) as Render
-                    setRenders((prev) => [...prev, result])
-                  } catch (e) { console.error(e) }
-                  setProcessing(null)
-                }} className="bg-card border border-border rounded-lg p-4 text-center hover:border-accent transition-colors">
+                <button key={p.preset} onClick={() => handleAction(`Rendering for ${p.label}...`, async () => {
+                  const result = await api.render(projectId, p.preset) as Render
+                  setRenders(prev => [...prev, result])
+                })} className="bg-card border border-border rounded-lg p-4 text-center hover:border-accent transition-colors">
                   <div className="text-sm font-medium">{p.label}</div>
                   <div className="text-xs text-muted-foreground mt-1">{p.dims}</div>
                 </button>
@@ -240,8 +244,8 @@ export default function ProjectEditorPage() {
                       {r.duration_s ? `${r.duration_s.toFixed(1)}s` : ""}
                       {r.file_size_mb ? ` · ${r.file_size_mb}MB` : ""}
                     </div>
-                    {r.status === "complete" && r.output_path && (
-                      <a href={`/renders/${r.output_path.split("renders\\").pop() || r.output_path.split("renders/").pop()}`} download className="text-accent hover:underline text-xs">Download</a>
+                    {r.status === "complete" && (
+                      <a href={resolveRenderUrl(r.output_path)} download className="text-accent hover:underline text-xs">Download</a>
                     )}
                   </div>
                 ))}
@@ -251,7 +255,6 @@ export default function ProjectEditorPage() {
         </div>
       )}
 
-      {/* Processing overlay */}
       {processing && (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50">
           <div className="bg-card border border-border rounded-lg p-8 text-center">
