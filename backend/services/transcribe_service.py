@@ -26,27 +26,28 @@ def transcribe_with_whisper(video_path: str, project_dir: str, model_size: str =
     out_path = transcripts_dir / f"{video.stem}.json"
     if out_path.exists():
         return str(out_path)
-    audio_path = Path(tempfile.mkdtemp()) / f"{video.stem}.wav"
-    subprocess.run([
-        "ffmpeg", "-y", "-i", str(video),
-        "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(audio_path),
-    ], check=True, capture_output=True)
-    try:
-        import whisper
-        model = whisper.load_model(model_size)
-    except ImportError:
-        raise RuntimeError("whisper not installed. Install with: pip install openai-whisper")
-    result = model.transcribe(str(audio_path), word_timestamps=True)
-    words_out = []
-    for seg in result.get("segments", []):
-        for w in seg.get("words", []):
-            words_out.append({
-                "text": w.get("word", "").strip(),
-                "type": "word",
-                "start": w.get("start", 0),
-                "end": w.get("end", 0),
-                "speaker_id": "SPEAKER_00",
-            })
-    payload = {"words": words_out, "language": result.get("language", "en"), "text": result.get("text", "")}
-    out_path.write_text(json.dumps(payload, indent=2))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        audio_path = Path(tmpdir) / f"{video.stem}.wav"
+        subprocess.run([
+            "ffmpeg", "-y", "-i", str(video),
+            "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(audio_path),
+        ], check=True, capture_output=True)
+        try:
+            import whisper
+            model = whisper.load_model(model_size)
+        except ImportError:
+            raise RuntimeError("whisper not installed. Install with: pip install openai-whisper")
+        result = model.transcribe(str(audio_path), word_timestamps=True)
+        words_out = []
+        for seg in result.get("segments", []):
+            for w in seg.get("words", []):
+                words_out.append({
+                    "text": w.get("word", "").strip(),
+                    "type": "word",
+                    "start": w.get("start", 0),
+                    "end": w.get("end", 0),
+                    "speaker_id": "SPEAKER_00",
+                })
+        payload = {"words": words_out, "language": result.get("language", "en"), "text": result.get("text", "")}
+        out_path.write_text(json.dumps(payload, indent=2))
     return str(out_path)

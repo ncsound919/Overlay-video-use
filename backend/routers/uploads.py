@@ -10,11 +10,15 @@ router = APIRouter()
 
 @router.post("/{project_id}", response_model=SourceResponse)
 async def upload_file(project_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if project_id <= 0:
+        raise HTTPException(400, "Invalid project ID")
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
-        from fastapi import HTTPException
         raise HTTPException(404, "Project not found")
-    info = await save_upload(file, project_id)
+    try:
+        info = await save_upload(file, project_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     source = Source(
         project_id=project_id,
         filename=info["filename"],

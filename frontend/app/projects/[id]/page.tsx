@@ -25,8 +25,7 @@ export default function ProjectEditorPage() {
 
   useEffect(() => {
     if (!projectId) return
-    fetch(`/api/uploads/${projectId}`).then(r => r.json()).then(setSources).catch(() => {})
-    fetch(`/api/rendering/${projectId}/renders`).then(r => r.json()).then(setRenders).catch(() => {})
+    api.listRenders(projectId).then(setRenders).catch(() => {})
   }, [projectId])
 
   if (loading) return <LoadingSpinner size={32} label="Loading project..." className="justify-center py-16" />
@@ -242,7 +241,7 @@ export default function ProjectEditorPage() {
                       {r.file_size_mb ? ` · ${r.file_size_mb}MB` : ""}
                     </div>
                     {r.status === "complete" && r.output_path && (
-                      <a href={`/static/${r.output_path.replace(/\\/g, "/")}`} download className="text-accent hover:underline text-xs">Download</a>
+                      <a href={`/renders/${r.output_path.split("renders\\").pop() || r.output_path.split("renders/").pop()}`} download className="text-accent hover:underline text-xs">Download</a>
                     )}
                   </div>
                 ))}

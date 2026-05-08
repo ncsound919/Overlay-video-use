@@ -20,10 +20,15 @@ export const api = {
   getProject: (id: number) => request<import("./types").Project>(`/projects/${id}`),
   deleteProject: (id: number) => request<{ ok: boolean }>(`/projects/${id}`, { method: "DELETE" }),
 
-  uploadFile: (projectId: number, file: File) => {
+  uploadFile: async (projectId: number, file: File) => {
     const formData = new FormData()
     formData.append("file", file)
-    return fetch(`${API_BASE}/uploads/${projectId}`, { method: "POST", body: formData }).then((r) => r.json())
+    const res = await fetch(`${API_BASE}/uploads/${projectId}`, { method: "POST", body: formData })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err || `Upload failed: ${res.status}`)
+    }
+    return res.json()
   },
 
   transcribe: (projectId: number, sourceId: number, engine = "elevenlabs", numSpeakers?: number) =>

@@ -20,13 +20,13 @@ def detect_scenes(video_path: str, threshold: float = 30.0) -> list[dict]:
     return scenes
 
 
-def detect_with_pyscenedetect(video_path: str) -> list[dict]:
+def detect_with_pyscenedetect(video_path: str, threshold: float = 30.0) -> list[dict]:
     try:
         from scenedetect import open_video, SceneManager
         from scenedetect.detectors import ContentDetector
         video = open_video(video_path)
         scene_manager = SceneManager()
-        scene_manager.add_detector(ContentDetector())
+        scene_manager.add_detector(ContentDetector(threshold=threshold / 10.0))
         scene_manager.detect_scenes(video)
         scene_list = scene_manager.get_scene_list()
         return [

@@ -18,7 +18,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="data"), name="static")
+# Only serve rendered outputs, not source uploads
+app.mount("/renders", StaticFiles(directory=settings.render_dir), name="renders")
 
 # Import routers safely — modules created incrementally in Tasks 3-12
 _router_modules = {

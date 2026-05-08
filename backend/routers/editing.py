@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from config import settings
 from database import get_db
 from models import Project, Source, EDL
 from schemas import EDLCreate, EDLResponse
@@ -31,7 +32,7 @@ def create_edl(project_id: int, data: EDLCreate, db: Session = Depends(get_db)):
     db.add(edl)
     db.commit()
     db.refresh(edl)
-    edl_json_path = Path(f"backend/data/projects/{project_id}/edit/edl.json")
+    edl_json_path = Path(f"{settings.project_dir}/{project_id}/edit/edl.json")
     edl_json_path.parent.mkdir(parents=True, exist_ok=True)
     edl_json = {
         "version": 1,

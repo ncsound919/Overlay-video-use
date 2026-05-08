@@ -12,5 +12,5 @@ def detect_scenes(project_id: int, source_id: int, threshold: float = 30.0, db: 
     source = db.query(Source).filter(Source.id == source_id, Source.project_id == project_id).first()
     if not source:
         raise HTTPException(404, "Source not found")
-    scenes = detect_with_pyscenedetect(source.filepath)
+    scenes = detect_with_pyscenedetect(source.filepath, threshold)
     return {"scenes": scenes, "count": len(scenes)}

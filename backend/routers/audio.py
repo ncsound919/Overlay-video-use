@@ -2,6 +2,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from config import settings
 from database import get_db
 from models import Project, Source
 from services.audio_service import full_audio_cleanup, remove_silence, reduce_noise
@@ -21,7 +22,7 @@ def cleanup_audio(project_id: int, source_id: int, req: AudioCleanupRequest, db:
     source = db.query(Source).filter(Source.id == source_id, Source.project_id == project_id).first()
     if not source:
         raise HTTPException(404, "Source not found")
-    output_dir = Path(f"backend/data/renders/{project_id}")
+    output_dir = Path(f"{settings.render_dir}/{project_id}")
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = Path(source.filepath).stem
     output_path = str(output_dir / f"{stem}_cleaned.mp4")

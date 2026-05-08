@@ -21,7 +21,7 @@ def transcribe_source(project_id: int, source_id: int, req: TranscribeRequest, d
     source = db.query(Source).filter(Source.id == source_id, Source.project_id == project_id).first()
     if not source:
         raise HTTPException(404, "Source not found")
-    project_dir = f"backend/data/projects/{project_id}"
+    project_dir = f"{settings.project_dir}/{project_id}"
     try:
         if req.engine == "elevenlabs":
             tr_path = transcribe_with_elevenlabs(source.filepath, project_dir, req.num_speakers)
