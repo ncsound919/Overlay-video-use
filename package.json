@@ -1,0 +1,16 @@
+{
+  "name": "video-use-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"cd backend && uvicorn main:app --reload --port 8000\" \"cd frontend && npm run dev\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && uvicorn main:app --reload --port 8000",
+    "build": "cd frontend && npm run build",
+    "install:all": "cd frontend && npm install && cd ../backend && pip install -r requirements.txt",
+    "setup": "python backend/helpers/setup_check.py"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
