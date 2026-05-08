@@ -1,6 +1,9 @@
 import json
+import subprocess
+import sys
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
@@ -8,6 +11,74 @@ from models import Project, Source, EDL
 from schemas import EDLCreate, EDLResponse
 
 router = APIRouter()
+
+
+class AutoEditRequest(BaseModel):
+    template: str = "talking_head"
+
+
+@router.post("/{project_id}/auto-edit")
+def auto_edit(project_id: int, req: AutoEditRequest, db: Session = Depends(get_db)):
+    """Run the deterministic edit agent to generate an EDL from transcript."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    edit_dir = Path(f"{settings.project_dir}/{project_id}/edit")
+    packed = edit_dir / "takes_packed.md"
+
+    if not packed.exists():
+        raise HTTPException(400, "No transcript found. Transcribe sources first.")
+
+    agent_script = Path(__file__).parent.parent.parent / "helpers" / "agent.py"
+    if not agent_script.exists():
+        raise HTTPException(500, f"Agent script not found: {agent_script}")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(agent_script),
+             "--edit-dir", str(edit_dir),
+             "--template", req.template],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            raise HTTPException(500, f"Agent failed: {result.stderr[:500]}")
+
+        # Load generated EDL
+        edl_json_path = edit_dir / "edl.json"
+        if not edl_json_path.exists():
+            raise HTTPException(500, "Agent ran but produced no EDL")
+
+        edl_data = json.loads(edl_json_path.read_text())
+
+        # Save to DB
+        existing = db.query(EDL).filter(EDL.project_id == project_id).first()
+        if existing:
+            db.delete(existing)
+
+        db_edl = EDL(
+            project_id=project_id,
+            version=1,
+            grade=edl_data.get("grade", ""),
+            total_duration_s=edl_data.get("total_duration_s", 0),
+            ranges=edl_data.get("ranges", []),
+            overlays=edl_data.get("overlays", []),
+            subtitles=edl_data.get("subtitles", ""),
+        )
+        db.add(db_edl)
+        project.status = "editing"
+        db.commit()
+        db.refresh(db_edl)
+
+        print(f"Agent output:\n{result.stdout}")
+        return db_edl
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, "Agent timed out after 120s")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Agent error: {str(e)}")
 
 
 @router.post("/{project_id}/edl", response_model=EDLResponse)

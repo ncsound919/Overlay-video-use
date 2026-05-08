@@ -11,7 +11,7 @@ import { LoadingSpinner } from "@/components/shared/loading-spinner"
 import { EmptyState } from "@/components/shared/empty-state"
 import { formatDuration } from "@/lib/utils"
 import { toast } from "sonner"
-import { Film, FileVideo, Mic, BrainCircuit, Music, Crop, Download, Clock, Hash, Maximize2, Plus, Loader2 } from "lucide-react"
+import { Film, FileVideo, Mic, BrainCircuit, Music, Crop, Download, Clock, Hash, Maximize2, Plus, Loader2, Wand2 } from "lucide-react"
 
 export default function ProjectEditorPage() {
   const params = useParams()
@@ -77,6 +77,19 @@ export default function ProjectEditorPage() {
     return `/renders/${parts[parts.length - 1]}`
   }
 
+  const handleAutoEdit = () => handleAction("Auto-editing...", async () => {
+    const result = await fetch(`/api/editing/${projectId}/auto-edit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ template: "talking_head" }),
+    })
+    if (!result.ok) throw new Error((await result.text()) || "Auto-edit failed")
+    const edl = await result.json()
+    toast.success(`EDL created: ${edl.ranges?.length || 0} segments, ${edl.total_duration_s}s`)
+    // Refresh EDL data
+    api.getEDL(projectId).then(() => {}).catch(() => {})
+  })
+
   if (loading) return <LoadingSpinner size={32} label="Loading project..." className="justify-center py-16" />
   if (error) return <div className="text-destructive py-16 text-center">{error}</div>
   if (!project) return <EmptyState icon={Film} title="Project not found" description="This project doesn't exist." />
@@ -131,6 +144,10 @@ export default function ProjectEditorPage() {
             <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
               className="flex items-center gap-2 bg-accent/10 text-accent px-4 py-2 rounded-md hover:bg-accent/20 disabled:opacity-50 transition-colors text-sm">
               {uploading ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading...</> : <><Plus className="w-4 h-4" /> Add Videos</>}
+            </button>
+            <button onClick={handleAutoEdit}
+              className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-md hover:bg-accent/90 transition-colors text-sm">
+              <Wand2 className="w-4 h-4" /> Auto Edit
             </button>
             <span className="text-xs text-muted-foreground">{sources.length} file{sources.length !== 1 ? "s" : ""} loaded</span>
           </div>
