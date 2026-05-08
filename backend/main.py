@@ -16,18 +16,26 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory="data"), name="static")
 
-from routers import projects, uploads, transcription, editing, rendering, scenes, reframe, templates, exports, audio
+# Import routers safely — modules created incrementally in Tasks 3-12
+_router_modules = {
+    "projects": "api/projects",
+    "uploads": "api/uploads",
+    "transcription": "api/transcription",
+    "editing": "api/editing",
+    "rendering": "api/rendering",
+    "scenes": "api/scenes",
+    "reframe": "api/reframe",
+    "templates": "api/templates",
+    "exports": "api/exports",
+    "audio": "api/audio",
+}
 
-app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
-app.include_router(uploads.router, prefix="/api/uploads", tags=["uploads"])
-app.include_router(transcription.router, prefix="/api/transcription", tags=["transcription"])
-app.include_router(editing.router, prefix="/api/editing", tags=["editing"])
-app.include_router(rendering.router, prefix="/api/rendering", tags=["rendering"])
-app.include_router(scenes.router, prefix="/api/scenes", tags=["scenes"])
-app.include_router(reframe.router, prefix="/api/reframe", tags=["reframe"])
-app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
-app.include_router(exports.router, prefix="/api/exports", tags=["exports"])
-app.include_router(audio.router, prefix="/api/audio", tags=["audio"])
+for _name, _prefix in _router_modules.items():
+    try:
+        _mod = __import__(f"routers.{_name}", fromlist=[_name])
+        app.include_router(_mod.router, prefix=f"/{_prefix}", tags=[_name])
+    except ImportError:
+        pass  # Router will be available after its task is implemented
 
 
 @app.on_event("startup")
