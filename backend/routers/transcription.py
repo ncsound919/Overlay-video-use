@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
+from config import settings
 from database import get_db
 from models import Project, Source
 from services.transcribe_service import transcribe_with_elevenlabs, transcribe_with_whisper
@@ -30,6 +31,20 @@ def transcribe_source(project_id: int, source_id: int, req: TranscribeRequest, d
         source.has_transcript = True
         source.transcript_path = tr_path
         db.commit()
+
+        # Auto-pack transcript after transcription
+        try:
+            import subprocess, sys
+            pack_script = Path(__file__).parent.parent.parent / "helpers" / "pack_transcripts.py"
+            edit_dir = Path(f"{settings.project_dir}/{project_id}/edit")
+            edit_dir.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                [sys.executable, str(pack_script), "--edit-dir", str(edit_dir)],
+                capture_output=True, text=True, timeout=30,
+            )
+        except Exception:
+            pass  # Pack is optional, don't block transcription
+
         return {"ok": True, "transcript_path": tr_path}
     except Exception as e:
         raise HTTPException(500, f"Transcription failed: {str(e)}")

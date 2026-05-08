@@ -28,7 +28,16 @@ def auto_edit(project_id: int, req: AutoEditRequest, db: Session = Depends(get_d
     packed = edit_dir / "takes_packed.md"
 
     if not packed.exists():
-        raise HTTPException(400, "No transcript found. Transcribe sources first.")
+        # Try to pack from raw transcripts
+        transcripts_dir = edit_dir / "transcripts"
+        if transcripts_dir.exists() and any(transcripts_dir.glob("*.json")):
+            pack_script = Path(__file__).parent.parent.parent / "helpers" / "pack_transcripts.py"
+            subprocess.run(
+                [sys.executable, str(pack_script), "--edit-dir", str(edit_dir)],
+                capture_output=True, text=True, timeout=30,
+            )
+        if not packed.exists():
+            raise HTTPException(400, "No transcript found. Transcribe sources first.")
 
     agent_script = Path(__file__).parent.parent.parent / "helpers" / "agent.py"
     if not agent_script.exists():
