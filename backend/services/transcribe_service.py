@@ -9,6 +9,8 @@ from config import settings
 def transcribe_with_elevenlabs(video_path: str, project_dir: str, num_speakers: Optional[int] = None) -> str:
     edit_dir = Path(project_dir) / "edit"
     edit_dir.mkdir(parents=True, exist_ok=True)
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from helpers.transcribe import transcribe_one
     out_path = transcribe_one(
         video=Path(video_path),

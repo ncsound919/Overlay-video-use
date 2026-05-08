@@ -105,6 +105,6 @@ class TemplateResponse(BaseModel):
     description: str
     category: str
     config: dict
-    created_at: datetime.datetime
+    created_at: Optional[datetime.datetime]
     class Config:
         from_attributes = True

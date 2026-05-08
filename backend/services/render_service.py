@@ -19,7 +19,7 @@ def run_render(project_id: int, preset: str = "youtube") -> dict:
     timestamp = int(time.time())
     output_path = output_dir / f"final_{preset}_{timestamp}.mp4"
     cmd = [
-        "python", str(Path(__file__).parent.parent / "helpers" / "render.py"),
+        "python", str(Path(__file__).parent.parent.parent / "helpers" / "render.py"),
         str(edl_path), "-o", str(output_path), "--build-subtitles",
     ]
     try:
