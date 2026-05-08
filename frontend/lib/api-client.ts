@@ -14,9 +14,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  listProjects: () => request<import("./types").Project[]>("/projects/"),
+  listProjects: () => request<import("./types").Project[]>("/projects"),
   createProject: (data: { name: string; description?: string; aspect_ratio?: string; fps?: number }) =>
-    request<import("./types").Project>("/projects/", { method: "POST", body: JSON.stringify(data) }),
+    request<import("./types").Project>("/projects", { method: "POST", body: JSON.stringify(data) }),
   getProject: (id: number) => request<import("./types").Project>(`/projects/${id}`),
   deleteProject: (id: number) => request<{ ok: boolean }>(`/projects/${id}`, { method: "DELETE" }),
 
@@ -60,7 +60,7 @@ export const api = {
   listTemplates: (category = "") =>
     request<import("./types").Template[]>(`/templates/?category=${category}`),
   createTemplate: (data: { name: string; description?: string; category?: string; config?: Record<string, unknown> }) =>
-    request<import("./types").Template>("/templates/", { method: "POST", body: JSON.stringify(data) }),
+    request<import("./types").Template>("/templates", { method: "POST", body: JSON.stringify(data) }),
   deleteTemplate: (id: number) => request<{ ok: boolean }>(`/templates/${id}`, { method: "DELETE" }),
 
   listExportPresets: () => request<Record<string, import("./types").ExportPreset>>("/exports/presets"),
