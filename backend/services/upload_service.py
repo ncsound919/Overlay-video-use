@@ -46,7 +46,7 @@ def probe_video(path: Path) -> dict:
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    except subprocess.CalledProcessError:
+    except Exception:
         return {"duration": 0.0, "width": 0, "height": 0, "codec": ""}
     import json
     try:
