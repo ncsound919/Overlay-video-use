@@ -1,14 +1,62 @@
 import subprocess
 import uuid
+import shutil
+import os
 from pathlib import Path
 from fastapi import UploadFile
 from config import settings
 
 UPLOAD_DIR = Path(settings.upload_dir)
 
-
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MAX_SIZE_BYTES = settings.max_upload_size_mb * 1024 * 1024
+
+# ---------------------------------------------------------------------------
+# Resolve ffprobe / ffmpeg at import time.
+# winget adds to the USER PATH but doesn't refresh the current shell, so
+# shutil.which() with the expanded environment is more reliable than relying
+# on the process PATH alone.
+# ---------------------------------------------------------------------------
+
+def _find_binary(name: str) -> str:
+    """Return the full path to `name`, checking the live registry PATH."""
+    # 1. Already on process PATH
+    found = shutil.which(name)
+    if found:
+        return found
+
+    # 2. Read the current Machine + User PATH from the Windows registry
+    #    (works even if the process was started before winget updated PATH)
+    try:
+        machine = os.environ.get("PATH", "")
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment") as k:
+            machine = winreg.QueryValueEx(k, "Path")[0]
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment") as k:
+            user = winreg.QueryValueEx(k, "Path")[0]
+        combined = machine + ";" + user
+        found = shutil.which(name, path=combined)
+        if found:
+            return found
+    except Exception:
+        pass
+
+    # 3. Common winget install locations
+    for base in [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages",
+        Path("C:/ProgramData/winget/Packages"),
+        Path("C:/Program Files/ffmpeg/bin"),
+        Path("C:/ffmpeg/bin"),
+    ]:
+        for hit in base.rglob(f"{name}.exe") if base.exists() else []:
+            return str(hit)
+
+    return name  # fall back to bare name; will fail with a clear error
+
+
+FFPROBE = _find_binary("ffprobe")
+FFMPEG  = _find_binary("ffmpeg")
 
 
 async def save_upload(file: UploadFile, project_id: int) -> dict:
@@ -38,7 +86,7 @@ async def save_upload(file: UploadFile, project_id: int) -> dict:
 
 def probe_video(path: Path) -> dict:
     cmd = [
-        "ffprobe", "-v", "quiet",
+        FFPROBE, "-v", "quiet",
         "-print_format", "json",
         "-show_format",
         "-show_streams",
