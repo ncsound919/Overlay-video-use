@@ -1,8 +1,12 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from config import settings
 from database import init_db
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 
@@ -35,7 +39,7 @@ for _name, _prefix in _router_modules.items():
         _mod = __import__(f"routers.{_name}", fromlist=[_name])
         app.include_router(_mod.router, prefix=f"/{_prefix}", tags=[_name])
     except ImportError:
-        pass  # Router will be available after its task is implemented
+        logger.warning("router '%s' not yet available (implemented in later task)", _name)
 
 
 @app.on_event("startup")

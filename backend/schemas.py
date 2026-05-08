@@ -1,6 +1,6 @@
 import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProjectCreate(BaseModel):
@@ -64,8 +64,8 @@ class EDLResponse(BaseModel):
     version: int
     grade: str
     total_duration_s: float
-    ranges: list
-    overlays: list
+    ranges: list[dict]
+    overlays: list[dict]
     subtitles: Optional[str]
     created_at: datetime.datetime
     class Config:
@@ -96,7 +96,7 @@ class TemplateCreate(BaseModel):
     name: str
     description: str = ""
     category: str = "custom"
-    config: dict = {}
+    config: dict = Field(default_factory=dict)
 
 
 class TemplateResponse(BaseModel):
