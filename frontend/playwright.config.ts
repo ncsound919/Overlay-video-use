@@ -7,6 +7,7 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:3002",
     trace: "on-first-retry",
+    screenshot: "only-on-failure",
   },
   projects: [
     {
@@ -14,10 +15,4 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    command: "cd .. && cd backend && python -m uvicorn main:app --port 8002 --log-level warning",
-    cwd: __dirname,
-    port: 8002,
-    reuseExistingServer: true,
-  },
 })

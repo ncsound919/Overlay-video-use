@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import { Upload, FileVideo, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -14,6 +14,7 @@ export function FileUpload({ onUpload, accept = "video/*", maxSize = 4096 }: Fil
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
@@ -39,9 +40,9 @@ export function FileUpload({ onUpload, accept = "video/*", maxSize = 4096 }: Fil
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
-      onClick={() => document.getElementById("file-input")?.click()}
+      onClick={() => fileRef.current?.click()}
     >
-      <input id="file-input" type="file" accept={accept} className="hidden"
+      <input ref={fileRef} type="file" accept={accept} className="sr-only"
         onChange={async (e) => {
           const file = e.target.files?.[0]
           if (!file) return

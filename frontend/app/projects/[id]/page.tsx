@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { api } from "@/lib/api-client"
@@ -11,7 +11,7 @@ import { LoadingSpinner } from "@/components/shared/loading-spinner"
 import { EmptyState } from "@/components/shared/empty-state"
 import { formatDuration } from "@/lib/utils"
 import { toast } from "sonner"
-import { Film, FileVideo, Mic, Scissors, BrainCircuit, Music, Crop, Download, Clock, Hash, Maximize2 } from "lucide-react"
+import { Film, FileVideo, Mic, BrainCircuit, Music, Crop, Download, Clock, Hash, Maximize2, Plus, Loader2 } from "lucide-react"
 
 export default function ProjectEditorPage() {
   const params = useParams()
@@ -25,15 +25,21 @@ export default function ProjectEditorPage() {
   const [scenes, setScenes] = useState<Scene[]>([])
   const [renders, setRenders] = useState<Render[]>([])
   const [processing, setProcessing] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    if (!projectId) return
+  const loadSources = () => {
     setSourcesLoading(true)
     fetch(`/api/uploads/${projectId}`)
       .then(r => r.json())
       .then(data => setSources(Array.isArray(data) ? data : []))
       .catch(() => toast.error("Failed to load sources"))
       .finally(() => setSourcesLoading(false))
+  }
+
+  useEffect(() => {
+    if (!projectId) return
+    loadSources()
     api.listRenders(projectId).then(setRenders).catch(() => {})
   }, [projectId])
 
@@ -42,6 +48,27 @@ export default function ProjectEditorPage() {
     try { await fn() }
     catch (e: unknown) { toast.error(e instanceof Error ? e.message : `${label} failed`) }
     finally { setProcessing(null) }
+  }
+
+  const handleUploadMore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    setUploading(true)
+    let lastError = ""
+    let success = 0
+    for (let i = 0; i < files.length; i++) {
+      try {
+        await api.uploadFile(projectId, files[i])
+        success++
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err.message : "Upload failed"
+      }
+    }
+    setUploading(false)
+    loadSources()
+    if (success > 0) toast.success(`${success} file(s) added`)
+    if (lastError) toast.error(lastError)
+    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   const resolveRenderUrl = (outputPath: string | null): string => {
@@ -65,6 +92,7 @@ export default function ProjectEditorPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
@@ -83,6 +111,7 @@ export default function ProjectEditorPage() {
         }`}>{project.status}</span>
       </div>
 
+      {/* Tab bar */}
       <div className="flex gap-1 bg-secondary p-1 rounded-lg w-fit">
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
@@ -94,45 +123,57 @@ export default function ProjectEditorPage() {
         ))}
       </div>
 
+      {/* Sources tab */}
       {activeTab === "sources" && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {sourcesLoading ? (
-            <p className="col-span-full text-center text-muted-foreground py-8">Loading sources...</p>
-          ) : sources.length === 0 ? (
-            <p className="col-span-full text-center text-muted-foreground py-8">No sources. Upload from the Upload page.</p>
-          ) : sources.map((s) => (
-            <div key={s.id} className="bg-card border border-border rounded-lg p-4">
-              <div className="flex items-center gap-3 mb-2">
-                <FileVideo className="w-5 h-5 text-accent" />
-                <span className="font-medium truncate">{s.filename}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {formatDuration(s.duration)}</span>
-                <span className="flex items-center gap-1"><Maximize2 className="w-3 h-3" /> {s.width}×{s.height}</span>
-                <span className="flex items-center gap-1"><Hash className="w-3 h-3" /> {s.codec}</span>
-                <span className={`flex items-center gap-1 ${s.has_transcript ? "text-green-400" : ""}`}>
-                  <Mic className="w-3 h-3" /> {s.has_transcript ? "Transcribed" : "Pending"}
-                </span>
-              </div>
-              <div className="flex gap-2 mt-3">
-                {!s.has_transcript && (
-                  <button onClick={() => handleAction("Transcribing...", () => startTranscription(s.id))}
-                    className="flex items-center gap-1 text-xs bg-accent/10 text-accent px-2 py-1 rounded hover:bg-accent/20">
-                    <Mic className="w-3 h-3" /> Transcribe
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input ref={fileInputRef} type="file" accept="video/*" multiple className="hidden" id="editor-upload" onChange={handleUploadMore} />
+            <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+              className="flex items-center gap-2 bg-accent/10 text-accent px-4 py-2 rounded-md hover:bg-accent/20 disabled:opacity-50 transition-colors text-sm">
+              {uploading ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading...</> : <><Plus className="w-4 h-4" /> Add Videos</>}
+            </button>
+            <span className="text-xs text-muted-foreground">{sources.length} file{sources.length !== 1 ? "s" : ""} loaded</span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {sourcesLoading ? (
+              <p className="col-span-full text-center text-muted-foreground py-8">Loading sources...</p>
+            ) : sources.length === 0 ? (
+              <p className="col-span-full text-center text-muted-foreground py-8">No sources yet. Click "Add Videos" above or use the Upload page.</p>
+            ) : sources.map((s) => (
+              <div key={s.id} className="bg-card border border-border rounded-lg p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <FileVideo className="w-5 h-5 text-accent" />
+                  <span className="font-medium truncate">{s.filename}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {formatDuration(s.duration)}</span>
+                  <span className="flex items-center gap-1"><Maximize2 className="w-3 h-3" /> {s.width}×{s.height}</span>
+                  <span className="flex items-center gap-1"><Hash className="w-3 h-3" /> {s.codec}</span>
+                  <span className={`flex items-center gap-1 ${s.has_transcript ? "text-green-400" : ""}`}>
+                    <Mic className="w-3 h-3" /> {s.has_transcript ? "Transcribed" : "Pending"}
+                  </span>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  {!s.has_transcript && (
+                    <button onClick={() => handleAction("Transcribing...", () => startTranscription(s.id))}
+                      className="flex items-center gap-1 text-xs bg-accent/10 text-accent px-2 py-1 rounded hover:bg-accent/20">
+                      <Mic className="w-3 h-3" /> Transcribe
+                    </button>
+                  )}
+                  <button onClick={() => handleAction("Detecting scenes...", async () => {
+                    const result = await api.detectScenes(projectId, s.id)
+                    setScenes(result.scenes)
+                  })} className="flex items-center gap-1 text-xs bg-secondary text-muted-foreground px-2 py-1 rounded hover:text-foreground">
+                    <BrainCircuit className="w-3 h-3" /> Detect Scenes
                   </button>
-                )}
-                <button onClick={() => handleAction("Detecting scenes...", async () => {
-                  const result = await api.detectScenes(projectId, s.id)
-                  setScenes(result.scenes)
-                })} className="flex items-center gap-1 text-xs bg-secondary text-muted-foreground px-2 py-1 rounded hover:text-foreground">
-                  <BrainCircuit className="w-3 h-3" /> Detect Scenes
-                </button>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
+      {/* Transcript tab */}
       {activeTab === "transcript" && (
         !transcript ? (
           <div className="text-center py-16">
@@ -148,6 +189,7 @@ export default function ProjectEditorPage() {
         )
       )}
 
+      {/* Scenes tab */}
       {activeTab === "scenes" && (
         scenes.length === 0 ? (
           <div className="text-center py-16">
@@ -167,6 +209,7 @@ export default function ProjectEditorPage() {
         )
       )}
 
+      {/* Reframe tab */}
       {activeTab === "reframe" && (
         <div className="space-y-4 max-w-md">
           <p className="text-sm text-muted-foreground">Convert your video to different aspect ratios for social platforms.</p>
@@ -190,6 +233,7 @@ export default function ProjectEditorPage() {
         </div>
       )}
 
+      {/* Audio tab */}
       {activeTab === "audio" && (
         <div className="space-y-4 max-w-md">
           <p className="text-sm text-muted-foreground">Clean up audio with open-source FFmpeg filters.</p>
@@ -208,6 +252,7 @@ export default function ProjectEditorPage() {
         </div>
       )}
 
+      {/* Export tab */}
       {activeTab === "render" && (
         <div className="space-y-6">
           <div>
@@ -229,7 +274,6 @@ export default function ProjectEditorPage() {
               ))}
             </div>
           </div>
-
           {renders.length > 0 && (
             <div>
               <h3 className="font-medium mb-2">Render History</h3>
@@ -255,6 +299,7 @@ export default function ProjectEditorPage() {
         </div>
       )}
 
+      {/* Processing overlay */}
       {processing && (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50">
           <div className="bg-card border border-border rounded-lg p-8 text-center">

@@ -58,3 +58,19 @@ master.srt
 takes_packed.md
 edl.json
 project.md
+
+# Next.js build artifacts
+frontend/.next/
+
+# Test artifacts
+frontend/test-results/
+frontend/tests/fixtures/
+
+# SQLite database
+*.db
+*.db-journal
+
+# Uploaded data
+backend/data/uploads/
+backend/data/renders/
+backend/data/projects/
