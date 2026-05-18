@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://localhost:3002"
     auth_enabled: bool = True
     secret_key: str = "dev-secret-change-in-production"
+    rate_limit_enabled: bool = True
 
     class Config:
         env_file = ".env"

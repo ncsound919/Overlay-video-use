@@ -100,7 +100,6 @@ def auto_edit(project_id: int, req: AutoEditRequest, db: Session = Depends(get_d
         db.commit()
         db.refresh(db_edl)
 
-        print(f"Agent output:\n{result.stdout}")
         logger.info("Agent output:\n%s", result.stdout)
         return db_edl
 

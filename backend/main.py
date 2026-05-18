@@ -49,6 +49,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
     async def dispatch(self, request: Request, call_next):
+        if not settings.rate_limit_enabled:
+            return await call_next(request)
         if request.url.path.startswith("/api/"):
             ip = request.client.host if request.client else "unknown"
             now = time.time()
@@ -105,14 +107,14 @@ for _name, _prefix in _router_modules.items():
     try:
         _mod = __import__(f"routers.{_name}", fromlist=[_name])
         app.include_router(_mod.router, prefix=f"/{_prefix}", tags=[_name])
-    except ImportError:
-        logger.warning("router '%s' not yet available (implemented in later task)", _name)
+    except ImportError as e:
+        logger.warning("router '%s' not yet available (implemented in later task): %s", _name, e)
 
 try:
     from routers import auth as auth_router
     app.include_router(auth_router.router, tags=["auth"])
-except ImportError:
-    logger.warning("router 'auth' not yet available")
+except ImportError as e:
+    logger.warning("router 'auth' not yet available: %s", e)
 
 
 # Removed startup event in favor of modern Lifespan manager

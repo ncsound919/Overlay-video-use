@@ -1,8 +1,12 @@
 """Shared test fixtures for backend e2e tests."""
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
+# Add backend directory to sys.path to ensure dynamic routers import correctly
+sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,8 +25,11 @@ def _override_settings(test_dir):
     """Override settings to use temp directories for each test."""
     from config import settings
     old_db = settings.database_url
+    old_rl = settings.rate_limit_enabled
     settings.database_url = f"sqlite:///{test_dir}/test.db?check_same_thread=False"
+    settings.rate_limit_enabled = False
 
+    import models
     from database import init_db, engine
     init_db()
     yield
@@ -31,12 +38,18 @@ def _override_settings(test_dir):
     if db_path.exists():
         db_path.unlink()
     settings.database_url = old_db
+    settings.rate_limit_enabled = old_rl
 
 
 @pytest.fixture
 def client():
     from main import app
     with TestClient(app) as c:
+        # Register and authenticate a default test user
+        resp = c.post("/api/auth/register", json={"email": "test@example.com", "password": "password123"})
+        if resp.status_code == 200:
+            token = resp.json()["access_token"]
+            c.headers["Authorization"] = f"Bearer {token}"
         yield c
 
 
