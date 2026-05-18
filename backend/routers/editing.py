@@ -12,7 +12,9 @@ from schemas import EDLCreate, EDLResponse
 from auth import get_current_user
 import librosa
 import numpy as np
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -23,11 +25,19 @@ class AutoEditRequest(BaseModel):
 @router.post("/{project_id}/auto-edit")
 def auto_edit(project_id: int, req: AutoEditRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Run the deterministic edit agent to generate an EDL from transcript."""
+    if project_id <= 0:
+        raise HTTPException(400, "Invalid project ID")
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(404, "Project not found")
+    if settings.auth_enabled and current_user and project.user_id != current_user.id:
+        raise HTTPException(403, "You do not have access to this project")
 
-    edit_dir = Path(f"{settings.project_dir}/{project_id}/edit")
+    base_dir = Path(settings.project_dir).resolve()
+    edit_dir = Path(f"{settings.project_dir}/{project_id}/edit").resolve()
+    if not str(edit_dir).startswith(str(base_dir)):
+        raise HTTPException(400, "Path traversal attempt detected")
+        
     packed = edit_dir / "takes_packed.md"
 
     if not packed.exists():
@@ -46,9 +56,11 @@ def auto_edit(project_id: int, req: AutoEditRequest, db: Session = Depends(get_d
     if not agent_script.exists():
         raise HTTPException(500, f"Agent script not found: {agent_script}")
 
-    sources_dir = Path(f"{settings.project_dir}/{project_id}/uploads")
+    sources_dir = Path(f"{settings.project_dir}/{project_id}/uploads").resolve()
     if not sources_dir.exists():
-        sources_dir = Path(f"{settings.project_dir}/{project_id}/sources")
+        sources_dir = Path(f"{settings.project_dir}/{project_id}/sources").resolve()
+    if not str(sources_dir).startswith(str(base_dir)):
+        raise HTTPException(400, "Path traversal attempt detected")
 
     try:
         result = subprocess.run(
@@ -89,6 +101,7 @@ def auto_edit(project_id: int, req: AutoEditRequest, db: Session = Depends(get_d
         db.refresh(db_edl)
 
         print(f"Agent output:\n{result.stdout}")
+        logger.info("Agent output:\n%s", result.stdout)
         return db_edl
 
     except subprocess.TimeoutExpired:
@@ -101,9 +114,13 @@ def auto_edit(project_id: int, req: AutoEditRequest, db: Session = Depends(get_d
 
 @router.post("/{project_id}/edl", response_model=EDLResponse)
 def create_edl(project_id: int, data: EDLCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if project_id <= 0:
+        raise HTTPException(400, "Invalid project ID")
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(404, "Project not found")
+    if settings.auth_enabled and current_user and project.user_id != current_user.id:
+        raise HTTPException(403, "You do not have access to this project")
     existing = db.query(EDL).filter(EDL.project_id == project_id).first()
     if existing:
         db.delete(existing)
@@ -137,6 +154,13 @@ def create_edl(project_id: int, data: EDLCreate, db: Session = Depends(get_db), 
 
 @router.get("/{project_id}/edl", response_model=EDLResponse)
 def get_edl(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if project_id <= 0:
+        raise HTTPException(400, "Invalid project ID")
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if settings.auth_enabled and current_user and project.user_id != current_user.id:
+        raise HTTPException(403, "You do not have access to this project")
     edl = db.query(EDL).filter(EDL.project_id == project_id).first()
     if not edl:
         raise HTTPException(404, "EDL not found")
@@ -145,6 +169,13 @@ def get_edl(project_id: int, db: Session = Depends(get_db), current_user: User =
 
 @router.delete("/{project_id}/edl")
 def delete_edl(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if project_id <= 0:
+        raise HTTPException(400, "Invalid project ID")
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if settings.auth_enabled and current_user and project.user_id != current_user.id:
+        raise HTTPException(403, "You do not have access to this project")
     edl = db.query(EDL).filter(EDL.project_id == project_id).first()
     if not edl:
         raise HTTPException(404, "EDL not found")
@@ -156,9 +187,13 @@ def delete_edl(project_id: int, db: Session = Depends(get_db), current_user: Use
 @router.post("/{project_id}/extract-chorus")
 def extract_chorus(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Acoustically locate the high-energy chorus hook, slice a 15-second promo clip, and export vertical 9:16 video."""
+    if project_id <= 0:
+        raise HTTPException(400, "Invalid project ID")
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(404, "Project not found")
+    if settings.auth_enabled and current_user and project.user_id != current_user.id:
+        raise HTTPException(403, "You do not have access to this project")
 
     sources = db.query(Source).filter(Source.project_id == project_id).all()
     if not sources:
@@ -187,11 +222,11 @@ def extract_chorus(project_id: int, db: Session = Depends(get_db), current_user:
         else:
             chorus_start = 0.0
     except Exception as e:
-        print(f"Chorus detection failed: {e}")
+        logger.error("Chorus detection failed: %s", e)
         chorus_start = 10.0
 
     chorus_end = chorus_start + 15.0
-    print(f"Chorus hook detected at {chorus_start:.2f}s - {chorus_end:.2f}s")
+    logger.info("Chorus hook detected at %.2fs - %.2fs", chorus_start, chorus_end)
 
     # Fetch original EDL
     db_edl = db.query(EDL).filter(EDL.project_id == project_id).first()

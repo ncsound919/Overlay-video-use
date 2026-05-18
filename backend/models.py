@@ -18,6 +18,7 @@ class Project(Base):
     fps = Column(Float, default=24.0)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     sources = relationship("Source", back_populates="project", cascade="all, delete-orphan")
     edl = relationship("EDL", back_populates="project", uselist=False, cascade="all, delete-orphan")
     renders = relationship("Render", back_populates="project", cascade="all, delete-orphan")

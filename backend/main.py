@@ -10,10 +10,16 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from config import settings
 from migrations import run_migrations
+from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.app_name, debug=settings.debug)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    run_migrations()
+    yield
+
+app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -34,11 +40,12 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, max_requests: int = 10000, window_seconds: int = 60):
+    def __init__(self, app, max_requests: int = 120, window_seconds: int = 60):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self._store: DefaultDict[str, List[float]] = defaultdict(list)
+        self._counter = 0
 
 
     async def dispatch(self, request: Request, call_next):
@@ -54,6 +61,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
             timestamps.append(now)
             self._store[ip] = timestamps
+            
+            # Periodically prune stale IP rate-limit logs to prevent memory leaks
+            self._counter += 1
+            if self._counter % 100 == 0:
+                for k in list(self._store.keys()):
+                    self._store[k] = [t for t in self._store[k] if now - t < self.window_seconds]
+                    if not self._store[k]:
+                        del self._store[k]
         return await call_next(request)
 
 
@@ -65,8 +80,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-Request-ID"],
 )
 
 # Only serve rendered outputs, not source uploads
@@ -100,9 +115,7 @@ except ImportError:
     logger.warning("router 'auth' not yet available")
 
 
-@app.on_event("startup")
-def on_startup():
-    run_migrations()
+# Removed startup event in favor of modern Lifespan manager
 
 
 @app.get("/api/health")

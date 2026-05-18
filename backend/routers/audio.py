@@ -4,7 +4,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
-from models import Project, Source
+from models import Project, Source, User
+from auth import get_current_user
 from services.audio_service import full_audio_cleanup, remove_silence, reduce_noise, run_bass_boost, run_studio_polish
 
 router = APIRouter()
@@ -18,11 +19,23 @@ class AudioCleanupRequest(BaseModel):
 
 
 @router.post("/{project_id}/sources/{source_id}/cleanup")
-def cleanup_audio(project_id: int, source_id: int, req: AudioCleanupRequest, db: Session = Depends(get_db)):
+def cleanup_audio(project_id: int, source_id: int, req: AudioCleanupRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if project_id <= 0:
+        raise HTTPException(400, "Invalid project ID")
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if settings.auth_enabled and current_user and project.user_id != current_user.id:
+        raise HTTPException(403, "You do not have access to this project")
+
     source = db.query(Source).filter(Source.id == source_id, Source.project_id == project_id).first()
     if not source:
         raise HTTPException(404, "Source not found")
-    output_dir = Path(f"{settings.render_dir}/{project_id}")
+        
+    base_dir = Path(settings.render_dir).resolve()
+    output_dir = Path(f"{settings.render_dir}/{project_id}").resolve()
+    if not str(output_dir).startswith(str(base_dir)):
+        raise HTTPException(400, "Path traversal attempt detected")
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = Path(source.filepath).stem
     output_path = str(output_dir / f"{stem}_cleaned.mp4")

@@ -5,13 +5,17 @@ from models import Project, Source, User
 from schemas import ProjectCreate, ProjectResponse
 from auth import get_current_user
 from services.cleanup_service import delete_project_assets
+from config import settings
 
 router = APIRouter()
 
 
 @router.get("/", response_model=list[ProjectResponse])
 def list_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    projects = db.query(Project).order_by(Project.updated_at.desc()).all()
+    query = db.query(Project)
+    if settings.auth_enabled and current_user:
+        query = query.filter(Project.user_id == current_user.id)
+    projects = query.order_by(Project.updated_at.desc()).all()
     result = []
     for p in projects:
         count = db.query(Source).filter(Source.project_id == p.id).count()
@@ -26,7 +30,8 @@ def list_projects(db: Session = Depends(get_db), current_user: User = Depends(ge
 
 @router.post("/", response_model=ProjectResponse)
 def create_project(data: ProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    project = Project(name=data.name, description=data.description, aspect_ratio=data.aspect_ratio, fps=data.fps)
+    uid = current_user.id if current_user else None
+    project = Project(name=data.name, description=data.description, aspect_ratio=data.aspect_ratio, fps=data.fps, user_id=uid)
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -42,6 +47,8 @@ def get_project(project_id: int, db: Session = Depends(get_db), current_user: Us
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(404, "Project not found")
+    if settings.auth_enabled and current_user and project.user_id != current_user.id:
+        raise HTTPException(403, "You do not have access to this project")
     count = db.query(Source).filter(Source.project_id == project_id).count()
     return ProjectResponse(
         id=project.id, name=project.name, description=project.description or "",
@@ -55,6 +62,8 @@ def delete_project(project_id: int, db: Session = Depends(get_db), current_user:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(404, "Project not found")
+    if settings.auth_enabled and current_user and project.user_id != current_user.id:
+        raise HTTPException(403, "You do not have access to this project")
     db.delete(project)
     db.commit()
     delete_project_assets(project_id)
