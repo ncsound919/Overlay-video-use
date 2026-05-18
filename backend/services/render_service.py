@@ -2,13 +2,40 @@ import subprocess
 import json
 import time
 from pathlib import Path
+from sqlalchemy.orm import Session
 from config import settings
+from models import EDL, Source
 
 
-def run_render(project_id: int, preset: str = "youtube") -> dict:
+def write_edl_to_disk(project_id: int, db: Session) -> Path:
     project_dir = Path(f"{settings.project_dir}/{project_id}")
     edit_dir = project_dir / "edit"
     edl_path = edit_dir / "edl.json"
+    edl_record = db.query(EDL).filter(EDL.project_id == project_id).first()
+    if not edl_record:
+        return edl_path
+    sources = db.query(Source).filter(Source.project_id == project_id).all()
+    edl_data = {
+        "version": edl_record.version,
+        "sources": {s.filename: s.filepath for s in sources},
+        "ranges": edl_record.ranges or [],
+        "grade": edl_record.grade or "",
+        "overlays": edl_record.overlays or [],
+        "total_duration_s": edl_record.total_duration_s or 0,
+        "subtitles": edl_record.subtitles,
+    }
+    edl_path.parent.mkdir(parents=True, exist_ok=True)
+    edl_path.write_text(json.dumps(edl_data, indent=2))
+    return edl_path
+
+
+def run_render(project_id: int, preset: str = "youtube", db: Session = None) -> dict:
+    if db:
+        edl_path = write_edl_to_disk(project_id, db)
+    else:
+        project_dir = Path(f"{settings.project_dir}/{project_id}")
+        edit_dir = project_dir / "edit"
+        edl_path = edit_dir / "edl.json"
     if not edl_path.exists():
         return {"error": "EDL not found. Create an EDL first."}
     output_dir = Path(f"{settings.render_dir}/{project_id}")

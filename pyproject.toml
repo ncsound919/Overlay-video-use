@@ -2,7 +2,24 @@
 name = "video-use"
 version = "0.1.0"
 description = "Conversation-driven video editor skill for Claude Code"
+readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "video-use team"}
+]
+keywords = ["video", "editing", "ai", "ffmpeg", "transcription"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video :: Editing",
+]
 dependencies = [
     "requests",
     "librosa",
@@ -14,9 +31,20 @@ dependencies = [
 [project.optional-dependencies]
 animations = ["manim"]
 
+[project.scripts]
+video-use = "video_use.__main__:main"
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = []
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88

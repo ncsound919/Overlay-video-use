@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from config import settings
 from database import get_db
-from models import Project, Source
+from models import Project, Source, User
 from services.transcribe_service import transcribe_with_elevenlabs, transcribe_with_whisper
+from auth import get_current_user
 
 router = APIRouter()
 
@@ -18,10 +19,12 @@ class TranscribeRequest(BaseModel):
 
 
 @router.post("/{project_id}/sources/{source_id}")
-def transcribe_source(project_id: int, source_id: int, req: TranscribeRequest, db: Session = Depends(get_db)):
+def transcribe_source(project_id: int, source_id: int, req: TranscribeRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     source = db.query(Source).filter(Source.id == source_id, Source.project_id == project_id).first()
     if not source:
         raise HTTPException(404, "Source not found")
+    if req.engine not in ("elevenlabs", "whisper"):
+        raise HTTPException(400, f"Unknown engine: {req.engine}. Use 'elevenlabs' or 'whisper'.")
     project_dir = f"{settings.project_dir}/{project_id}"
     try:
         if req.engine == "elevenlabs":
@@ -32,7 +35,6 @@ def transcribe_source(project_id: int, source_id: int, req: TranscribeRequest, d
         source.transcript_path = tr_path
         db.commit()
 
-        # Auto-pack transcript after transcription
         try:
             import subprocess, sys
             pack_script = Path(__file__).parent.parent.parent / "helpers" / "pack_transcripts.py"
@@ -43,15 +45,17 @@ def transcribe_source(project_id: int, source_id: int, req: TranscribeRequest, d
                 capture_output=True, text=True, timeout=30,
             )
         except Exception:
-            pass  # Pack is optional, don't block transcription
+            pass
 
         return {"ok": True, "transcript_path": tr_path}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(500, f"Transcription failed: {str(e)}")
 
 
 @router.get("/{project_id}/sources/{source_id}/transcript")
-def get_transcript(project_id: int, source_id: int, db: Session = Depends(get_db)):
+def get_transcript(project_id: int, source_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     source = db.query(Source).filter(Source.id == source_id, Source.project_id == project_id).first()
     if not source or not source.transcript_path:
         raise HTTPException(404, "Transcript not found")

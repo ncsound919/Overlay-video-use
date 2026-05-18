@@ -1,9 +1,11 @@
 const API_BASE = "/api"
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE}${path}`
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options.headers },
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (token) headers["Authorization"] = `Bearer ${token}`
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { ...headers, ...options.headers },
     ...options,
   })
   if (!res.ok) {
@@ -31,14 +33,14 @@ export const api = {
     return res.json()
   },
 
-  transcribe: (projectId: number, sourceId: number, engine = "elevenlabs", numSpeakers?: number) =>
+  transcribe: (projectId: number, sourceId: number, engine = "whisper", numSpeakers?: number) =>
     request<{ ok: boolean; transcript_path: string }>(`/transcription/${projectId}/sources/${sourceId}`, {
       method: "POST", body: JSON.stringify({ engine, num_speakers: numSpeakers }),
     }),
   getTranscript: (projectId: number, sourceId: number) =>
     request<import("./types").Transcript>(`/transcription/${projectId}/sources/${sourceId}/transcript`),
 
-  createEDL: (projectId: number, data: { ranges: import("./types").EDLRange[]; grade?: string; overlays?: [] }) =>
+  createEDL: (projectId: number, data: { ranges: import("./types").EDLRange[]; grade?: string; subtitle_style?: string; overlays?: Array<{ file: string; start_in_output: number; duration: number; start_in_source?: number }> }) =>
     request<import("./types").EDL>(`/editing/${projectId}/edl`, { method: "POST", body: JSON.stringify(data) }),
   getEDL: (projectId: number) => request<import("./types").EDL>(`/editing/${projectId}/edl`),
   deleteEDL: (projectId: number) => request<{ ok: boolean }>(`/editing/${projectId}/edl`, { method: "DELETE" }),
@@ -59,6 +61,7 @@ export const api = {
 
   listTemplates: (category = "") =>
     request<import("./types").Template[]>(`/templates/?category=${category}`),
+  getTemplate: (id: number) => request<import("./types").Template>(`/templates/${id}`),
   createTemplate: (data: { name: string; description?: string; category?: string; config?: Record<string, unknown> }) =>
     request<import("./types").Template>("/templates", { method: "POST", body: JSON.stringify(data) }),
   deleteTemplate: (id: number) => request<{ ok: boolean }>(`/templates/${id}`, { method: "DELETE" }),

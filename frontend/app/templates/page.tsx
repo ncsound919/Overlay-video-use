@@ -92,7 +92,7 @@ export default function TemplatesPage() {
         <EmptyState icon={LayoutTemplate} title="No templates" description="Create a template to save editing presets." />
       ) : (
         <div className="grid gap-4 md:grid-cols-3">
-          {templates.map((t) => <TemplateCard key={t.id || t.name} template={t} onDelete={t.id > 0 ? handleDelete : undefined} />)}
+          {templates.map((t) => <TemplateCard key={t.id || t.name} template={t} onDelete={t.id > 0 ? handleDelete : undefined} showViewButton />)}
         </div>
       )}
     </div>

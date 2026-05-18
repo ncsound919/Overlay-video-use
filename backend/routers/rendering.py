@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Project, Render
+from models import Project, Render, User
 from schemas import RenderResponse
 from services.render_service import run_render
+from auth import get_current_user
 
 router = APIRouter()
 
@@ -14,11 +15,11 @@ class RenderRequest(BaseModel):
 
 
 @router.post("/{project_id}/render")
-def start_render(project_id: int, req: RenderRequest, db: Session = Depends(get_db)):
+def start_render(project_id: int, req: RenderRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(404, "Project not found")
-    result = run_render(project_id, req.preset)
+    result = run_render(project_id, req.preset, db)
     if "error" in result:
         render = Render(project_id=project_id, status="failed", preset=req.preset, error=result["error"])
         db.add(render)
@@ -36,5 +37,5 @@ def start_render(project_id: int, req: RenderRequest, db: Session = Depends(get_
 
 
 @router.get("/{project_id}/renders", response_model=list[RenderResponse])
-def list_renders(project_id: int, db: Session = Depends(get_db)):
+def list_renders(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Render).filter(Render.project_id == project_id).order_by(Render.created_at.desc()).all()

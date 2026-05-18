@@ -16,7 +16,7 @@ export function useTranscript(projectId: number) {
     } catch { } finally { setLoading(false) }
   }, [projectId])
 
-  const startTranscription = useCallback(async (sourceId: number, engine = "elevenlabs", numSpeakers?: number) => {
+  const startTranscription = useCallback(async (sourceId: number, engine = "whisper", numSpeakers?: number) => {
     setLoading(true)
     try {
       await api.transcribe(projectId, sourceId, engine, numSpeakers)

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
 from models import Project, Source
-from services.audio_service import full_audio_cleanup, remove_silence, reduce_noise
+from services.audio_service import full_audio_cleanup, remove_silence, reduce_noise, run_bass_boost, run_studio_polish
 
 router = APIRouter()
 
@@ -32,6 +32,10 @@ def cleanup_audio(project_id: int, source_id: int, req: AudioCleanupRequest, db:
         result = remove_silence(source.filepath, output_path, req.silence_duration, req.silence_threshold)
     elif req.mode == "noise":
         result = reduce_noise(source.filepath, output_path, req.noise_strength)
+    elif req.mode == "bass_boost":
+        result = run_bass_boost(source.filepath, output_path)
+    elif req.mode == "studio_polish":
+        result = run_studio_polish(source.filepath, output_path)
     else:
         raise HTTPException(400, f"Unknown mode: {req.mode}")
     return result

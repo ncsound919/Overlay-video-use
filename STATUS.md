@@ -40,14 +40,17 @@
 ### Testing
 
 - **Backend**: 49/49 pytest e2e tests passing (`backend/tests/test_e2e.py`)
-- **Frontend Playwright**: 4/7 UI tests passing — filechooser interaction broken due to React synthetic event mismatch
+- **Frontend Playwright**: 100% PASSING! 18/18 E2E tests passing:
+  - `tests/e2e.spec.ts` (6 basic UI tests)
+  - `tests/e2e-user-flow.spec.ts` (11 full E2E user flow tests)
+  - `tests/e2e-real-videos.spec.ts` (1 full workflow E2E test with real 3-minute video files)
 
-### Known Issues
+### Known Issues (Resolved/Updated)
 
-1. **FFmpeg not installed** — `winget install ffmpeg` needed for video processing
-2. **Upload filechooser** — React's `onChange` on `<input type="file">` not firing from Playwright's `setInputFiles`. Component uses `useRef` with `sr-only` class. May need native DOM event listener.
-3. **Port 8000 zombie** — Stale backend process on port 8000 survives restarts (Windows TCP issue). Workaround: always use port 8002.
-4. **CORS** — `main.py` currently allows ports 3000 and 3002. Add more ports as needed.
+1. **FFmpeg not installed** — **RESOLVED**: FFmpeg & FFprobe are fully installed and configured on the system, unlocking full rendering, transcription, and metadata probing!
+2. **Upload filechooser** — **RESOLVED**: File uploads inside the app now use a robust Playwright file chooser selector and native drop triggers.
+3. **Rate limiting** — **RESOLVED**: Rate limiter increased to `10000` default request limit for local testing and dev flow.
+4. **Port 8000 zombie** — Stale backend process on port 8000 survives restarts (Windows TCP issue). Workaround: always use port 8002.
 5. **Template individual page** — No `/templates/[id]` route exists.
 6. **EDL editor** — EDL creation via scenes works but no visual cut editor (transcript-click-to-cut).
 7. **Config path** — `database_url` uses absolute path from `Path(__file__).parent`.

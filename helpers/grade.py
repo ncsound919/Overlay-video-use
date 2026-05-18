@@ -58,6 +58,23 @@ PRESETS: dict[str, str] = {
         "curves=master='0/0 0.25/0.22 0.75/0.78 1/1'"
     ),
 
+    "gritty_rap": (
+        "eq=contrast=1.2:saturation=0.7:brightness=-0.05,"
+        "curves=master='0/0 0.25/0.2 0.75/0.8 1/1'"
+    ),
+
+    "neon_vibes": (
+        "colorbalance=rs=0.1:bs=0.2:gm=-0.05,"
+        "eq=saturation=1.3:contrast=1.1"
+    ),
+
+    "vintage_film": (
+        "colorbalance=rs=0.1:bs=-0.1,"
+        "eq=contrast=0.9:saturation=0.8,"
+        "curves=master='0/0.05 0.5/0.5 1/0.95',"
+        "noise=alls=10:allf=t+u"
+    ),
+
     # Flat — no grade. Useful as a sentinel for "skip grading this source".
     "none": "",
 }

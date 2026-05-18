@@ -50,11 +50,13 @@ class EDLOverlay(BaseModel):
     file: str
     start_in_output: float
     duration: float
+    start_in_source: float = 0.0
 
 
 class EDLCreate(BaseModel):
     ranges: list[EDLRange]
     grade: str = ""
+    subtitle_style: str = "clean_minimal"
     overlays: list[EDLOverlay] = []
 
 
@@ -67,6 +69,7 @@ class EDLResponse(BaseModel):
     ranges: list[dict]
     overlays: list[dict]
     subtitles: Optional[str]
+    subtitle_style: str = "clean_minimal"
     created_at: datetime.datetime
     class Config:
         from_attributes = True
@@ -108,3 +111,18 @@ class TemplateResponse(BaseModel):
     created_at: Optional[datetime.datetime]
     class Config:
         from_attributes = True
+
+
+class UserRegister(BaseModel):
+    email: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"

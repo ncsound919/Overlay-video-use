@@ -1,18 +1,69 @@
 import logging
+import time
+import uuid
+from collections import defaultdict
+from typing import DefaultDict, List
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from config import settings
-from database import init_db
+from migrations import run_migrations
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "0"
+        return response
+
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_requests: int = 10000, window_seconds: int = 60):
+        super().__init__(app)
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._store: DefaultDict[str, List[float]] = defaultdict(list)
+
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/api/"):
+            ip = request.client.host if request.client else "unknown"
+            now = time.time()
+            timestamps = [t for t in self._store[ip] if now - t < self.window_seconds]
+            if len(timestamps) >= self.max_requests:
+                return Response(
+                    content='{"detail":"Too many requests"}',
+                    status_code=429,
+                    media_type="application/json",
+                )
+            timestamps.append(now)
+            self._store[ip] = timestamps
+        return await call_next(request)
+
+
+# Middleware order: first added = outermost wrapper
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3002"],
+    allow_origins=settings.cors_origins.split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,10 +93,16 @@ for _name, _prefix in _router_modules.items():
     except ImportError:
         logger.warning("router '%s' not yet available (implemented in later task)", _name)
 
+try:
+    from routers import auth as auth_router
+    app.include_router(auth_router.router, tags=["auth"])
+except ImportError:
+    logger.warning("router 'auth' not yet available")
+
 
 @app.on_event("startup")
 def on_startup():
-    init_db()
+    run_migrations()
 
 
 @app.get("/api/health")

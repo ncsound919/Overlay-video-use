@@ -4,29 +4,36 @@ import shutil
 import os
 from pathlib import Path
 from fastapi import UploadFile
+from fastapi import HTTPException
 from config import settings
 
 UPLOAD_DIR = Path(settings.upload_dir)
 
-ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".flv", ".wmv", ".mp3", ".wav", ".aac", ".m4a"}
 MAX_SIZE_BYTES = settings.max_upload_size_mb * 1024 * 1024
 
-# ---------------------------------------------------------------------------
-# Resolve ffprobe / ffmpeg at import time.
-# winget adds to the USER PATH but doesn't refresh the current shell, so
-# shutil.which() with the expanded environment is more reliable than relying
-# on the process PATH alone.
-# ---------------------------------------------------------------------------
+def _validate_magic(content: bytes) -> bool:
+    if len(content) < 12:
+        return False
+    if content[4:8] == b"ftyp":
+        return True
+    if content[0:4] == b"RIFF":
+        return True
+    if content[0:4] == b"\x1aE\xdf\xa3":
+        return True
+    if content[0:3] == b"ID3":
+        return True
+    if content[0:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return True
+    if content[0:4] in (b"\x00\x00\x01\x00", b"\x00\x00\x00\x00"):
+        return True
+    return False
+
 
 def _find_binary(name: str) -> str:
-    """Return the full path to `name`, checking the live registry PATH."""
-    # 1. Already on process PATH
     found = shutil.which(name)
     if found:
         return found
-
-    # 2. Read the current Machine + User PATH from the Windows registry
-    #    (works even if the process was started before winget updated PATH)
     try:
         machine = os.environ.get("PATH", "")
         import winreg
@@ -41,8 +48,6 @@ def _find_binary(name: str) -> str:
             return found
     except Exception:
         pass
-
-    # 3. Common winget install locations
     for base in [
         Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages",
         Path("C:/ProgramData/winget/Packages"),
@@ -51,8 +56,7 @@ def _find_binary(name: str) -> str:
     ]:
         for hit in base.rglob(f"{name}.exe") if base.exists() else []:
             return str(hit)
-
-    return name  # fall back to bare name; will fail with a clear error
+    return name
 
 
 FFPROBE = _find_binary("ffprobe")
@@ -60,20 +64,34 @@ FFMPEG  = _find_binary("ffmpeg")
 
 
 async def save_upload(file: UploadFile, project_id: int) -> dict:
-    ext = (Path(file.filename).suffix.lower() if file.filename else ".mp4")
+    if project_id <= 0:
+        raise HTTPException(400, "Invalid project ID")
+
+    ext = (Path(file.filename).suffix.lower() if file.filename else "")
     if ext not in ALLOWED_EXTENSIONS:
-        raise ValueError(f"Unsupported file type: {ext}. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+        raise HTTPException(400, f"Unsupported file type: '{ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
 
     content = await file.read()
-    if len(content) > MAX_SIZE_BYTES:
-        raise ValueError(f"File too large. Max {settings.max_upload_size_mb}MB.")
+    content_size = len(content)
+
+    if content_size > MAX_SIZE_BYTES:
+        raise HTTPException(413, f"File too large. Maximum size is {settings.max_upload_size_mb}MB.")
+
+    if content_size > 32:
+        if not _validate_magic(content):
+            raise HTTPException(400, "File content does not match a known video format.")
 
     project_dir = UPLOAD_DIR / str(project_id)
     project_dir.mkdir(parents=True, exist_ok=True)
     unique_name = f"{uuid.uuid4().hex}{ext}"
     dest = project_dir / unique_name
     dest.write_bytes(content)
+
     probe = probe_video(dest)
+    if probe.get("duration", 0) == 0 and probe.get("codec", "") == "":
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, "Uploaded file could not be read as a valid video.")
+
     return {
         "filename": file.filename,
         "filepath": str(dest),
@@ -85,13 +103,7 @@ async def save_upload(file: UploadFile, project_id: int) -> dict:
 
 
 def probe_video(path: Path) -> dict:
-    cmd = [
-        FFPROBE, "-v", "quiet",
-        "-print_format", "json",
-        "-show_format",
-        "-show_streams",
-        str(path),
-    ]
+    cmd = [FFPROBE, "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(path)]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     except Exception:
@@ -102,10 +114,11 @@ def probe_video(path: Path) -> dict:
     except json.JSONDecodeError:
         return {"duration": 0.0, "width": 0, "height": 0, "codec": ""}
     video_stream = next((s for s in data.get("streams", []) if s["codec_type"] == "video"), {})
+    audio_stream = next((s for s in data.get("streams", []) if s["codec_type"] == "audio"), {})
     format_info = data.get("format", {})
     return {
         "duration": float(format_info.get("duration", 0)),
         "width": int(video_stream.get("width", 0)),
         "height": int(video_stream.get("height", 0)),
-        "codec": video_stream.get("codec_name", ""),
+        "codec": video_stream.get("codec_name", audio_stream.get("codec_name", "")),
     }

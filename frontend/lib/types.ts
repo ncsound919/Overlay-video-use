@@ -51,7 +51,8 @@ export interface EDL {
   grade: string
   total_duration_s: number
   ranges: EDLRange[]
-  overlays: Array<{ file: string; start_in_output: number; duration: number }>
+  overlays: Array<{ file: string; start_in_output: number; duration: number; start_in_source?: number }>
+  subtitle_style: string
   subtitles: string | null
   created_at: string
 }
@@ -81,7 +82,7 @@ export interface Template {
   name: string
   description: string
   category: string
-  config: Record<string, unknown>
+  config: any
   created_at: string | null
 }
 

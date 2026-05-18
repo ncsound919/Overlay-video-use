@@ -55,6 +55,28 @@ SUB_FORCE_STYLE = (
     "Alignment=2,MarginV=90"
 )
 
+SUB_FORCE_STYLES = {
+    "clean_minimal": SUB_FORCE_STYLE,
+    "bold_neon": (
+        "FontName=Arial Black,FontSize=24,Bold=1,"
+        "PrimaryColour=&H0000FF00,OutlineColour=&H00000000,BackColour=&H00000000,"
+        "BorderStyle=1,Outline=3,Shadow=0,"
+        "Alignment=2,MarginV=90"
+    ),
+    "karaoke_bounce": (
+        "FontName=Impact,FontSize=26,Bold=1,"
+        "PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BackColour=&H00000000,"
+        "BorderStyle=1,Outline=3,Shadow=2,"
+        "Alignment=2,MarginV=100"
+    ),
+    "typewriter": (
+        "FontName=Courier New,FontSize=18,Bold=1,"
+        "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,"
+        "BorderStyle=3,Outline=1,Shadow=0,"
+        "Alignment=2,MarginV=80"
+    ),
+}
+
 # -------- Helpers ------------------------------------------------------------
 
 
@@ -142,6 +164,7 @@ def extract_segment(
     out_path: Path,
     preview: bool = False,
     draft: bool = False,
+    beat_sync: bool = False,
 ) -> None:
     """Extract a cut range as its own MP4 with grade + 30ms audio fades baked in.
 
@@ -165,6 +188,10 @@ def extract_segment(
     vf_parts.append(scale)
     if grade_filter:
         vf_parts.append(grade_filter)
+        
+    if beat_sync:
+        vf_parts.append("eq=brightness='0.3*max(0, 1 - 5*t)'")
+        
     vf = ",".join(vf_parts)
 
     # 30ms audio fades at both edges (Rule 3) — prevent pops
@@ -238,7 +265,7 @@ def extract_all_segments(
         print(f"  [{i:02d}] {src_name}  {start:7.2f}-{end:7.2f}  ({duration:5.2f}s)  {note}")
         if is_auto:
             print(f"        grade: {seg_filter or '(none)'}")
-        extract_segment(src_path, start, duration, seg_filter, out_path, preview=preview, draft=draft)
+        extract_segment(src_path, start, duration, seg_filter, out_path, preview=preview, draft=draft, beat_sync=edl.get("beat_sync", False))
         seg_paths.append(out_path)
 
     return seg_paths
@@ -278,6 +305,13 @@ def _srt_timestamp(seconds: float) -> str:
     m, rem = divmod(rem, 60_000)
     s, ms = divmod(rem, 1000)
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+def _ass_timestamp(seconds: float) -> str:
+    total_cs = int(round(seconds * 100))
+    m, rem = divmod(total_cs, 6000)
+    s, cs = divmod(rem, 100)
+    h, m = divmod(m, 60)
+    return f"{h:01d}:{m:02d}:{s:02d}.{cs:02d}"
 
 
 def _words_in_range(transcript: dict, t_start: float, t_end: float) -> list[dict]:
@@ -365,6 +399,101 @@ def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
         lines.append("")
     out_path.write_text("\n".join(lines))
     print(f"master SRT → {out_path.name} ({len(entries)} cues)")
+
+
+def build_master_ass(edl: dict, edit_dir: Path, out_path: Path) -> None:
+    """Build high-energy kinetic ASS (Advanced SubStation Alpha) subtitles.
+    
+    Includes pop scale animations and active syllable-highlighting (karaoke).
+    """
+    transcripts_dir = edit_dir / "transcripts"
+    
+    ass_header = """[Script Info]
+Title: Kinetic Neon Rap Subtitles
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: NeonRap,Outfit,56,&H0000FFFF,&H000000FF,&H00FF00FF,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,5,30,30,960,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    dialogues = []
+    seg_offset = 0.0
+
+    for r in edl["ranges"]:
+        src_name = r["source"]
+        seg_start = float(r["start"])
+        seg_end = float(r["end"])
+        seg_duration = seg_end - seg_start
+
+        tr_path = transcripts_dir / f"{src_name}.json"
+        if not tr_path.exists():
+            seg_offset += seg_duration
+            continue
+
+        try:
+            transcript = json.loads(tr_path.read_text())
+        except Exception:
+            seg_offset += seg_duration
+            continue
+            
+        words_in_seg = _words_in_range(transcript, seg_start, seg_end)
+
+        # 3-word chunks for punchy vertical layout
+        chunks = []
+        current = []
+        for w in words_in_seg:
+            text = (w.get("text") or "").strip()
+            if not text:
+                continue
+            current.append(w)
+            ends_in_punct = bool(text) and text[-1] in PUNCT_BREAK
+            if len(current) >= 3 or ends_in_punct:
+                chunks.append(current)
+                current = []
+        if current:
+            chunks.append(current)
+
+        for chunk in chunks:
+            local_start = max(seg_start, chunk[0].get("start", seg_start))
+            local_end = min(seg_end, chunk[-1].get("end", seg_end))
+            out_start = max(0.0, local_start - seg_start) + seg_offset
+            out_end = max(0.0, local_end - seg_start) + seg_offset
+            
+            if out_end <= out_start:
+                out_end = out_start + 0.5
+                
+            # Build active syllable karaoke timing tags
+            cue_text_parts = []
+            current_time = local_start
+            for w in chunk:
+                w_start = max(local_start, w.get("start", local_start))
+                w_end = min(local_end, w.get("end", local_end))
+                if w_start > current_time:
+                    silence_cs = int(round((w_start - current_time) * 100))
+                    cue_text_parts.append(f"{{\\k{silence_cs}}}")
+                dur_cs = max(10, int(round((w_end - w_start) * 100)))
+                word_text = w.get("text", "").strip().upper().rstrip(",;:")
+                cue_text_parts.append(f"{{\\kf{dur_cs}}}{word_text} ")
+                current_time = w_end
+                
+            # Bouncing kinetic scale tag
+            pop_tag = "{\\t(0,80,\\fscx140\\fscy140)\\t(80,160,\\fscx100\\fscy100)}"
+            lyrics = pop_tag + "".join(cue_text_parts).strip()
+            
+            dialogues.append(
+                f"Dialogue: 0,{_ass_timestamp(out_start)},{_ass_timestamp(out_end)},NeonRap,,0,0,0,,{lyrics}"
+            )
+
+        seg_offset += seg_duration
+
+    out_path.write_text(ass_header + "\n".join(dialogues))
+    print(f"master ASS → {out_path.name} ({len(dialogues)} events)")
 
 
 # -------- Loudness normalization (social-ready audio) -----------------------
@@ -482,6 +611,8 @@ def build_final_composite(
     subtitles_path: Path | None,
     out_path: Path,
     edit_dir: Path,
+    subtitle_style: str = "clean_minimal",
+    master_audio: Path | None = None,
 ) -> None:
     """Final pass: base → overlays (PTS-shifted) → subtitles LAST → out.
 
@@ -498,7 +629,11 @@ def build_final_composite(
     inputs: list[str] = ["-i", str(base_path)]
     for ov in overlays:
         ov_path = resolve_path(ov["file"], edit_dir)
-        inputs += ["-i", str(ov_path)]
+        start_src = float(ov.get("start_in_source", 0.0))
+        inputs += ["-ss", str(start_src), "-i", str(ov_path)]
+
+    if master_audio:
+        inputs += ["-i", str(master_audio)]
 
     filter_parts: list[str] = []
     # PTS-shift every overlay so its frame 0 lands at start_in_output
@@ -521,9 +656,15 @@ def build_final_composite(
     # Subtitles LAST — Rule 1
     if has_subs:
         subs_abs = str(subtitles_path.resolve()).replace(":", r"\:").replace("'", r"\'")
-        filter_parts.append(
-            f"{current}subtitles='{subs_abs}':force_style='{SUB_FORCE_STYLE}'[outv]"
-        )
+        if subtitles_path.suffix.lower() == ".ass":
+            filter_parts.append(
+                f"{current}ass='{subs_abs}'[outv]"
+            )
+        else:
+            style = SUB_FORCE_STYLES.get(subtitle_style, SUB_FORCE_STYLE)
+            filter_parts.append(
+                f"{current}subtitles='{subs_abs}':force_style='{style}'[outv]"
+            )
         out_label = "[outv]"
     else:
         # Rename the last overlay output to [outv] for consistency
@@ -540,15 +681,16 @@ def build_final_composite(
         *inputs,
         "-filter_complex", filter_complex,
         "-map", out_label,
-        "-map", "0:a",
+        "-map", f"{len(overlays) + 1}:a" if master_audio else "0:a",
         "-c:v", "libx264", "-preset", "fast", "-crf", "18",
         "-pix_fmt", "yuv420p",
-        "-c:a", "copy",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-movflags", "+faststart",
+        "-shortest",
         str(out_path),
     ]
     print(f"compositing → {out_path.name}")
-    print(f"  overlays: {len(overlays)}, subtitles: {'yes' if has_subs else 'no'}")
+    print(f"  overlays: {len(overlays)}, subtitles: {'yes' if has_subs else 'no'}, master_audio: {'yes' if master_audio else 'no'}")
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
 
@@ -611,10 +753,17 @@ def main() -> None:
 
     # 3. Subtitles: build if requested, resolve final path
     subs_path: Path | None = None
+    subtitle_style = edl.get("subtitle_style", "clean_minimal")
     if not args.no_subtitles:
         if args.build_subtitles:
-            subs_path = edit_dir / "master.srt"
-            build_master_srt(edl, edit_dir, subs_path)
+            if subtitle_style in ("neon_rap", "kinetic_glow", "rap"):
+                subs_path = edit_dir / "master.ass"
+                build_master_ass(edl, edit_dir, subs_path)
+                edl["subtitles"] = "master.ass"
+            else:
+                subs_path = edit_dir / "master.srt"
+                build_master_srt(edl, edit_dir, subs_path)
+                edl["subtitles"] = "master.srt"
         elif edl.get("subtitles"):
             subs_path = resolve_path(edl["subtitles"], edit_dir)
             if not subs_path.exists():
@@ -623,13 +772,21 @@ def main() -> None:
 
     # 4. Composite (overlays + subtitles LAST) → intermediate (pre-loudnorm) path
     overlays = edl.get("overlays") or []
+    subtitle_style = edl.get("subtitle_style", "clean_minimal")
+    
+    master_audio: Path | None = None
+    for name, path in edl.get("sources", {}).items():
+        if Path(path).suffix.lower() in (".mp3", ".wav", ".aac", ".m4a"):
+            master_audio = resolve_path(path, edit_dir)
+            break
+
     if args.no_loudnorm:
         # Composite directly to final output
-        build_final_composite(base_path, overlays, subs_path, out_path, edit_dir)
+        build_final_composite(base_path, overlays, subs_path, out_path, edit_dir, subtitle_style, master_audio)
     else:
         # Composite to a temp file, then run loudnorm → final output
         tmp_composite = out_path.with_suffix(".prenorm.mp4")
-        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir)
+        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir, subtitle_style, master_audio)
         print("loudness normalization → social-ready (-14 LUFS / -1 dBTP / LRA 11)")
         apply_loudnorm_two_pass(tmp_composite, out_path, preview=args.draft)
         tmp_composite.unlink(missing_ok=True)
